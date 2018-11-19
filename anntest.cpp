@@ -248,16 +248,16 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
         __m128i vMaxIndex =  _mm_and_si128((__m128i)vMaxVal, mask);
         vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);        // Pack down to 16 bits
         vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex); 
-        //*(int*)&classImg[i] = _mm_cvtsi128_si32(vMaxIndex); // Store the lower 32 bits
-        *(int*)out = _mm_cvtsi128_si32(vMaxIndex);
+        *(int*)&classImg[i] = _mm_cvtsi128_si32(vMaxIndex); // Store the lower 32 bits
+        //*(int*)out = _mm_cvtsi128_si32(vMaxIndex);
         
-        
+        /*
         printf("%d\n", out[0]);
         printf("%d\n", out[1]);
         printf("%d\n", out[2]);
         printf("%d\n", out[3]);
-        
-        _mm_stream_si32((int*)&classImg[*(int*)out], 10);
+        */
+        //_mm_stream_si32((int*)&classImg[*(int*)out], 10);
         _mm_storeu_ps(&prob[i], vMaxVal);
 		
 	}
