@@ -36,6 +36,7 @@ THE SOFTWARE.
 #include <unistd.h>
 #include <math.h>
 #include <bitset>
+#include <emmintrin.h>
 
 #if ENABLE_OPENCV
 #include <opencv2/opencv.hpp>
@@ -233,85 +234,185 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
 {
 	
 	__m128i mask = _mm_set1_epi32(1023);
+	for (int i = start; i < end; i+=16)
+	{
+		
+		float* output_layer_test = output_layer;
+		__m128 vMaxVal1 = _mm_loadu_ps(&prob[i]);
+		__m128 vMaxVal2 = _mm_loadu_ps(&prob[i+4]); 
+		__m128 vMaxVal3 = _mm_loadu_ps(&prob[i+8]);
+		__m128 vMaxVal4 = _mm_loadu_ps(&prob[i+12]);
+		
+
+		for(int c = 0; c < numClasses; c++)
+		{	
+			__m128 cur1 = _mm_load_ps(&output_layer_test[i]);
+			__m128 cur2 = _mm_load_ps(&output_layer_test[i+4]);
+			__m128 cur3 = _mm_load_ps(&output_layer_test[i+8]);
+			__m128 cur4 = _mm_load_ps(&output_layer_test[i+12]);
+
+			vMaxVal1 = _mm_max_ps(vMaxVal1, cur1); 
+			vMaxVal2 = _mm_max_ps(vMaxVal2, cur2); 
+			vMaxVal3 = _mm_max_ps(vMaxVal3, cur3); 
+			vMaxVal4 = _mm_max_ps(vMaxVal4, cur4); 
+
+			output_layer_test += height*width;
+		}
+		
+        __m128i vMaxIndex1 =  _mm_and_si128((__m128i)vMaxVal1, mask);
+        vMaxIndex1 = _mm_packus_epi32(vMaxIndex1, vMaxIndex1);		// Pack down to 16 bits
+        vMaxIndex1 = _mm_packus_epi16(vMaxIndex1, vMaxIndex1); 	// Pack down to 8 bits
+
+        __m128i vMaxIndex2 =  _mm_and_si128((__m128i)vMaxVal2, mask);
+        vMaxIndex2 = _mm_packus_epi32(vMaxIndex2, vMaxIndex2);		// Pack down to 16 bits
+        vMaxIndex2 = _mm_packus_epi16(vMaxIndex2, vMaxIndex2); 	// Pack down to 8 bits
+
+        __m128i vMaxIndex3 =  _mm_and_si128((__m128i)vMaxVal3, mask);
+        vMaxIndex3 = _mm_packus_epi32(vMaxIndex3, vMaxIndex3);		// Pack down to 16 bits
+        vMaxIndex3 = _mm_packus_epi16(vMaxIndex3, vMaxIndex3); 	// Pack down to 8 bits
+
+        __m128i vMaxIndex4 =  _mm_and_si128((__m128i)vMaxVal4, mask);
+        vMaxIndex4 = _mm_packus_epi32(vMaxIndex4, vMaxIndex4);		// Pack down to 16 bits
+        vMaxIndex4 = _mm_packus_epi16(vMaxIndex4, vMaxIndex4); 	// Pack down to 8 bits
+
+
+        _mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex1));
+        _mm_stream_si32((int*)&classImg[i+4], _mm_cvtsi128_si32(vMaxIndex2)); 
+        _mm_stream_si32((int*)&classImg[i+8], _mm_cvtsi128_si32(vMaxIndex3));
+        _mm_stream_si32((int*)&classImg[i+12], _mm_cvtsi128_si32(vMaxIndex4));
+
+        _mm_storeu_ps(&prob[i], vMaxVal1);
+        _mm_storeu_ps(&prob[i+4], vMaxVal2);
+        _mm_storeu_ps(&prob[i+8], vMaxVal3);
+        _mm_storeu_ps(&prob[i+12], vMaxVal4);
+
+	
+    }
+
+	//not numthreads = 1 for my reference!!!
+	
+	//Method 1 - Avg = same as normal 
+
+	/*_	
+	__m128i mask = _mm_set1_epi32(1023);
 	for (int i = start; i < end; i+=4)
 	{
 		
-		__m128 vMaxVal = _mm_loadu_ps(&prob[i]);
-    	__m128 cur = _mm_loadu_ps(&output_layer[i]); 
+		float* output_layer_test = output_layer;
+		//__m128 vMaxVal = _mm_loadu_ps(&prob[i]); 
+		__m128 vMaxVal = _mm_setzero_ps();
+		
 
 		for(int c = 0; c < numClasses; c++)
-		{
-			vMaxVal = _mm_max_ps(vMaxVal, cur);
-		}		
-        
-        unsigned char out[4]; 
-        __m128i vMaxIndex =  _mm_and_si128((__m128i)vMaxVal, mask);
-        vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);        // Pack down to 16 bits
-        vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex); 
-        *(int*)&classImg[i] = _mm_cvtsi128_si32(vMaxIndex); // Store the lower 32 bits
-        //*(int*)out = _mm_cvtsi128_si32(vMaxIndex);
-        
-        /*
-        printf("%d\n", out[0]);
-        printf("%d\n", out[1]);
-        printf("%d\n", out[2]);
-        printf("%d\n", out[3]);
-        */
-        //_mm_stream_si32((int*)&classImg[*(int*)out], 10);
-        _mm_storeu_ps(&prob[i], vMaxVal);
+		{	
+
+			__m128 cur = _mm_load_ps(&output_layer_test[i]);
+			vMaxVal = _mm_max_ps(vMaxVal, cur); 
+			output_layer_test += height*width;
+		}
 		
-	}
+        __m128i vMaxIndex =  _mm_and_si128((__m128i)vMaxVal, mask);
+        vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);		// Pack down to 16 bits
+        vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex); 	// Pack down to 8 bits
+        _mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex)); 
+        _mm_storeu_ps(&prob[i], vMaxVal);
+
+	
+    }
+	*/
 	
 	/*
 	__m128i mask = _mm_set1_epi32(1023);//0X000003FF (10 digits for index)
     for(int c = 0; c < numClasses; c++)
-    {        
-        //__m128i vIndexInc = _mm_set1_epi32(c+1);       
+    {              
+        for(int i = start; i < end; i+=16)
+        {      	
+        	__m128 vMaxVal1 = _mm_loadu_ps(&prob[i]);
+        	__m128 vMaxVal2 = _mm_loadu_ps(&prob[i+4]);
+        	__m128 vMaxVal3 = _mm_loadu_ps(&prob[i+8]);
+        	__m128 vMaxVal4 = _mm_loadu_ps(&prob[i+12]);
+
+        	__m128 cur1 = _mm_loadu_ps(&output_layer[i]);
+        	__m128 cur2 = _mm_loadu_ps(&output_layer[i+4]); 
+        	__m128 cur3 = _mm_loadu_ps(&output_layer[i+8]);
+        	__m128 cur4 = _mm_loadu_ps(&output_layer[i+12]);
+
+
+           	vMaxVal1 = _mm_max_ps(vMaxVal1, cur1);
+           	vMaxVal2 = _mm_max_ps(vMaxVal2, cur2);
+           	vMaxVal3 = _mm_max_ps(vMaxVal3, cur3);
+           	vMaxVal4 = _mm_max_ps(vMaxVal4, cur4);
+
+            __m128i vMaxIndex1 =  _mm_and_si128((__m128i)vMaxVal1, mask);
+            __m128i vMaxIndex2 =  _mm_and_si128((__m128i)vMaxVal2, mask);
+            __m128i vMaxIndex3 =  _mm_and_si128((__m128i)vMaxVal3, mask);
+            __m128i vMaxIndex4 =  _mm_and_si128((__m128i)vMaxVal4, mask);
+
+            vMaxIndex1 = _mm_packus_epi32(vMaxIndex1, vMaxIndex1);        // Pack down to 16 bits
+            vMaxIndex1 = _mm_packus_epi16(vMaxIndex1, vMaxIndex1);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
+
+            vMaxIndex2 = _mm_packus_epi32(vMaxIndex2, vMaxIndex2);        // Pack down to 16 bits
+            vMaxIndex2 = _mm_packus_epi16(vMaxIndex2, vMaxIndex2);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
+
+            vMaxIndex3 = _mm_packus_epi32(vMaxIndex3, vMaxIndex3);        // Pack down to 16 bits
+            vMaxIndex3 = _mm_packus_epi16(vMaxIndex3, vMaxIndex3);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
+
+            vMaxIndex4 = _mm_packus_epi32(vMaxIndex4, vMaxIndex4);        // Pack down to 16 bits
+            vMaxIndex4 = _mm_packus_epi16(vMaxIndex4, vMaxIndex4);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
+
+            _mm_storeu_ps(&prob[i], vMaxVal1);
+            _mm_storeu_ps(&prob[i+4], vMaxVal2);
+            _mm_storeu_ps(&prob[i+8], vMaxVal3);
+            _mm_storeu_ps(&prob[i+12], vMaxVal4);
+
+        	_mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex1));
+        	_mm_stream_si32((int*)&classImg[i+4], _mm_cvtsi128_si32(vMaxIndex2)); 	
+        	_mm_stream_si32((int*)&classImg[i+8], _mm_cvtsi128_si32(vMaxIndex3));
+        	_mm_stream_si32((int*)&classImg[i+12], _mm_cvtsi128_si32(vMaxIndex4));
+          	
+          }
+       
+        output_layer += (width * height);
+    }
+    /*
+	//Method 2 - double as much as normal
+	
+	__m128i mask = _mm_set1_epi32(1023);//0X000003FF (10 digits for index)
+    for(int c = 0; c < numClasses; c++)
+    {              
         for(int i = start; i < end; i+=4)
-        {
-            unsigned char ind[4];
-        	//__m128 vMaxVal = _mm_setr_ps(prob[i], prob[i+1], prob[i+2], prob[i+3]);
-        	//__m128 cur = _mm_setr_ps(output_layer[i], output_layer[i+1], output_layer[i+2], output_layer[i+3]);   
-        	
+        {      	
         	__m128 vMaxVal = _mm_loadu_ps(&prob[i]);
         	__m128 cur = _mm_loadu_ps(&output_layer[i]); 
-            //__m128i vMaxIndex = _mm_loadu_si128((__m128i *)&classImg[i]);
 
            	vMaxVal = _mm_max_ps(vMaxVal, cur);
             __m128i vMaxIndex =  _mm_and_si128((__m128i)vMaxVal, mask);
             vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);        // Pack down to 16 bits
             vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
-           	*(int*)ind = _mm_cvtsi128_si32(vMaxIndex); // Store the lower 32 bits
-            //classImg[i] = _mm_extract_epi32(vMaxIndex,0); // Store the lower 32 bits
-        	_mm_stream_si32((int*)ind, c+1);
             _mm_storeu_ps(&prob[i], vMaxVal);
-            //_mm_stream_si32((int*)&classImg[*ind], c+1);
+        	_mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex)); 	
+          	
+          }
+       
+        output_layer += (width * height);
+    }
+   	
+	//Original Method 
+	
+   	for(int c = 0; c < numClasses; c++)
+    {
+	   for(int i = start; i < end; i++)
+        {
 
-            
-            __m128 vcmp = _mm_cmpgt_ps(cur, vMaxVal);
-            __m128 vcmp2 = _mm_cmpgt_ps(cur, _mm_set1_ps(threshold));
-            vcmp = _mm_and_ps(vcmp, vcmp2);
-            vMaxVal = _mm_blendv_ps(vMaxVal, cur, vcmp);
-            vMaxIndex = _mm_blendv_epi8(vMaxIndex, vIndexInc, _mm_castps_si128(vcmp));
-
-            _mm_storeu_si128((__m128i *)&classImg[i], vMaxIndex);
-            
-            
-
-           
-        	
             if((output_layer[i] >= threshold) && (output_layer[i] > prob[i]))
             {
                 prob[i] = output_layer[i];
                 classImg[i] = c + 1;
             }
-          	  
-          }
-       
+        }
         output_layer += (width * height);
     }
-    */
-   
+	*/
     return;
 
 }
@@ -341,8 +442,8 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
     int width = input_dims[3];
 
     int64_t freq = clockFrequency(), t0, t1;
-    int numthreads = std::thread::hardware_concurrency();
-    //int numthreads = 1;
+    //int numthreads = std::thread::hardware_concurrency();
+    int numthreads = 1;
     //std::cout << "numthreads = " << numthreads << std::endl;
     size_t start = 0, end = 0, chunk = 0;
 
@@ -350,6 +451,68 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
     t0 = clockCounter();
     memset(prob, 0, (width * height * sizeof(float)));
     memset(classImg, 0, (width * height));
+
+    /*
+    for (int i = 0; i < numClasses; i++)
+    {
+    	for (int j = 0; j < height; j++)
+    	{
+    		for (int k = 0; k < width; k++)
+    		{
+    			union
+                {
+                    float input;   // assumes sizeof(float) == sizeof(int)
+                    int   output;
+                }   data;
+
+                
+                data.input = output_layer[(i*height +j)*width + k];
+
+                std::bitset<sizeof(float) * CHAR_BIT>   maxBinary(data.output); 
+
+                std::bitset<sizeof(float) * CHAR_BIT>   maxIndexBin(i+1); 
+                std::bitset<32> mask = 0XFFFFFC00;
+                maxBinary = maxBinary & mask;
+
+                maxBinary = maxBinary | maxIndexBin;
+                //std::cout << maxBinary << std::endl;
+                output_layer[(i*height + j)*width + k] = reinterpret_cast<float &>(maxBinary);
+    		}
+    	}
+    }
+   	*/
+    float* output_layer_test = output_layer;
+
+    for (int i = 0; i < numClasses; i++)
+    {
+    	for (int j = 0; j < height*width; j++)
+    	{
+    		union
+            {
+                float input;   // assumes sizeof(float) == sizeof(int)
+                int   output;
+            }   data;
+
+            //std::cout << r*2048 + c << std::endl; 
+                
+            data.input = output_layer_test[j];
+
+            std::bitset<sizeof(float) * CHAR_BIT>   maxBinary(data.output); 
+
+            std::bitset<sizeof(float) * CHAR_BIT>   maxIndexBin(i+1); 
+            std::bitset<32> mask = 0XFFFFFC00;
+            maxBinary = maxBinary & mask;
+
+            maxBinary = maxBinary | maxIndexBin;
+            //std::cout << maxBinary << std::endl;
+            output_layer_test[j] = reinterpret_cast<float &>(maxBinary);
+        
+    	}
+    	output_layer_test += (width * height);
+    }
+
+
+
 
     t1 = clockCounter();
     //printf("getMaskImage: memset time -- %.3f msec\n", (float)(t1-t0)*1000.0f/(float)freq);
@@ -723,10 +886,12 @@ int main(int argc, const char ** argv)
             if((frameCount != 0))
                 pipeLineThread[0].join();
             //std::cout << "before  = " << prob[0][1] << std::endl;
+            /*
             for(int i = 0 ; i < pipelineDepth; i++)
             {
                 for(int r = 0; r < input_dims[2]; r++)
                 {
+                	int cls = 1;
                     for(int c = 0; c < input_dims[3]; c++)
                     {
                         union
@@ -741,7 +906,7 @@ int main(int argc, const char ** argv)
 
                         std::bitset<sizeof(float) * CHAR_BIT>   maxBinary(data.output); 
 
-                        std::bitset<sizeof(float) * CHAR_BIT>   maxIndexBin((i*input_dims[2]+r)*input_dims[3] + c); 
+                        std::bitset<sizeof(float) * CHAR_BIT>   maxIndexBin(cls); 
                         std::bitset<32> mask = 0XFFFFFC00;
                         maxBinary = maxBinary & mask;
 
@@ -753,7 +918,7 @@ int main(int argc, const char ** argv)
                     }
                 }
             }
-
+			*/
 
             //std::cout << "after = " <<prob[0][1] << std::endl;
             pipeLineThread[0] = std::thread(processOutput,
