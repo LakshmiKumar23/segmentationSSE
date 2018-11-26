@@ -73,6 +73,8 @@ unsigned char overlayColors[4][20][3] = {
         {  0, 80,100},      // train
         {  0,  0,230},      // motorcycle
         {119, 11, 32}       // bicycle
+        
+
     },
     {
         {225,225,225},      // unclassified
@@ -230,32 +232,47 @@ void color_on_trackbar( int, void* ){
     return;
 }
 
+
+const __m128i maskIns = _mm_set1_epi32(0XFFFFFC00);
+const	__m128i mask = _mm_set1_epi32(1023);
 void findClassProb(size_t start , size_t end, int width, int height, int numClasses, float* output_layer, float threshold, float* prob, unsigned char* classImg)
 {
 	
-	__m128i mask = _mm_set1_epi32(1023);
 	for (int i = start; i < end; i+=16)
 	{
 		
 		float* output_layer_test = output_layer;
-		__m128 vMaxVal1 = _mm_loadu_ps(&prob[i]);
-		__m128 vMaxVal2 = _mm_loadu_ps(&prob[i+4]); 
-		__m128 vMaxVal3 = _mm_loadu_ps(&prob[i+8]);
-		__m128 vMaxVal4 = _mm_loadu_ps(&prob[i+12]);
+		__m128 vMaxVal1 = _mm_load_ps(&prob[i]);
+		__m128 vMaxVal2 = _mm_load_ps(&prob[i+4]); 
+		__m128 vMaxVal3 = _mm_load_ps(&prob[i+8]);
+		__m128 vMaxVal4 = _mm_load_ps(&prob[i+12]);
 		
 
 		for(int c = 0; c < numClasses; c++)
-		{	
+		{
+			__m128i index = _mm_set1_epi32(c+1);
+
 			__m128 cur1 = _mm_load_ps(&output_layer_test[i]);
 			__m128 cur2 = _mm_load_ps(&output_layer_test[i+4]);
 			__m128 cur3 = _mm_load_ps(&output_layer_test[i+8]);
 			__m128 cur4 = _mm_load_ps(&output_layer_test[i+12]);
 
-			vMaxVal1 = _mm_max_ps(vMaxVal1, cur1); 
-			vMaxVal2 = _mm_max_ps(vMaxVal2, cur2); 
-			vMaxVal3 = _mm_max_ps(vMaxVal3, cur3); 
-			vMaxVal4 = _mm_max_ps(vMaxVal4, cur4); 
+			__m128i maxBin1 = _mm_and_si128((__m128i)(cur1), maskIns);
+			__m128i maxBin2 = _mm_and_si128((__m128i)(cur2), maskIns);
+			__m128i maxBin3 = _mm_and_si128((__m128i)(cur3), maskIns);
+			__m128i maxBin4 = _mm_and_si128((__m128i)(cur4), maskIns);
 
+            maxBin1 = _mm_or_si128(maxBin1, index);
+            maxBin2 = _mm_or_si128(maxBin2, index);
+            maxBin3 = _mm_or_si128(maxBin3, index);
+            maxBin4 = _mm_or_si128(maxBin4, index);
+
+
+			vMaxVal1 = _mm_max_ps(vMaxVal1, (__m128)maxBin1); 
+			vMaxVal2 = _mm_max_ps(vMaxVal2, (__m128)maxBin2); 
+			vMaxVal3 = _mm_max_ps(vMaxVal3, (__m128)maxBin3); 
+			vMaxVal4 = _mm_max_ps(vMaxVal4, (__m128)maxBin4); 
+			
 			output_layer_test += height*width;
 		}
 		
@@ -281,33 +298,36 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
         _mm_stream_si32((int*)&classImg[i+8], _mm_cvtsi128_si32(vMaxIndex3));
         _mm_stream_si32((int*)&classImg[i+12], _mm_cvtsi128_si32(vMaxIndex4));
 
-        _mm_storeu_ps(&prob[i], vMaxVal1);
-        _mm_storeu_ps(&prob[i+4], vMaxVal2);
-        _mm_storeu_ps(&prob[i+8], vMaxVal3);
-        _mm_storeu_ps(&prob[i+12], vMaxVal4);
+        _mm_store_ps(&prob[i], vMaxVal1);
+        _mm_store_ps(&prob[i+4], vMaxVal2);
+        _mm_store_ps(&prob[i+8], vMaxVal3);
+        _mm_store_ps(&prob[i+12], vMaxVal4);
 
 	
     }
-
+    
+/*
 	//not numthreads = 1 for my reference!!!
 	
 	//Method 1 - Avg = same as normal 
-
-	/*_	
+	
 	__m128i mask = _mm_set1_epi32(1023);
 	for (int i = start; i < end; i+=4)
 	{
 		
 		float* output_layer_test = output_layer;
-		//__m128 vMaxVal = _mm_loadu_ps(&prob[i]); 
-		__m128 vMaxVal = _mm_setzero_ps();
+		__m128 vMaxVal = _mm_load_ps(&prob[i]); 
 		
 
 		for(int c = 0; c < numClasses; c++)
 		{	
-
+			__m128i index = _mm_set1_epi32(c+1);
 			__m128 cur = _mm_load_ps(&output_layer_test[i]);
-			vMaxVal = _mm_max_ps(vMaxVal, cur); 
+
+			__m128i maxBin = _mm_and_si128((__m128i)(cur), maskIns);
+			maxBin = _mm_or_si128(maxBin, index);
+
+			vMaxVal = _mm_max_ps(vMaxVal, (__m128)maxBin); 
 			output_layer_test += height*width;
 		}
 		
@@ -315,33 +335,45 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
         vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);		// Pack down to 16 bits
         vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex); 	// Pack down to 8 bits
         _mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex)); 
-        _mm_storeu_ps(&prob[i], vMaxVal);
+        _mm_store_ps(&prob[i], vMaxVal);
 
 	
     }
 	*/
 	
-	/*
+/*
 	__m128i mask = _mm_set1_epi32(1023);//0X000003FF (10 digits for index)
     for(int c = 0; c < numClasses; c++)
     {              
+    	__m128i index = _mm_set1_epi32(c+1);
         for(int i = start; i < end; i+=16)
         {      	
-        	__m128 vMaxVal1 = _mm_loadu_ps(&prob[i]);
-        	__m128 vMaxVal2 = _mm_loadu_ps(&prob[i+4]);
-        	__m128 vMaxVal3 = _mm_loadu_ps(&prob[i+8]);
-        	__m128 vMaxVal4 = _mm_loadu_ps(&prob[i+12]);
+        	__m128 vMaxVal1 = _mm_load_ps(&prob[i]);
+        	__m128 vMaxVal2 = _mm_load_ps(&prob[i+4]);
+        	__m128 vMaxVal3 = _mm_load_ps(&prob[i+8]);
+        	__m128 vMaxVal4 = _mm_load_ps(&prob[i+12]);
 
-        	__m128 cur1 = _mm_loadu_ps(&output_layer[i]);
-        	__m128 cur2 = _mm_loadu_ps(&output_layer[i+4]); 
-        	__m128 cur3 = _mm_loadu_ps(&output_layer[i+8]);
-        	__m128 cur4 = _mm_loadu_ps(&output_layer[i+12]);
+        	__m128 cur1 = _mm_load_ps(&output_layer[i]);
+        	__m128 cur2 = _mm_load_ps(&output_layer[i+4]); 
+        	__m128 cur3 = _mm_load_ps(&output_layer[i+8]);
+        	__m128 cur4 = _mm_load_ps(&output_layer[i+12]);
+
+			__m128i maxBin1 = _mm_and_si128((__m128i)(cur1), maskIns);
+			__m128i maxBin2 = _mm_and_si128((__m128i)(cur2), maskIns);
+			__m128i maxBin3 = _mm_and_si128((__m128i)(cur3), maskIns);
+			__m128i maxBin4 = _mm_and_si128((__m128i)(cur4), maskIns);
+
+            maxBin1 = _mm_or_si128(maxBin1, index);
+            maxBin2 = _mm_or_si128(maxBin2, index);
+            maxBin3 = _mm_or_si128(maxBin3, index);
+            maxBin4 = _mm_or_si128(maxBin4, index);
 
 
-           	vMaxVal1 = _mm_max_ps(vMaxVal1, cur1);
-           	vMaxVal2 = _mm_max_ps(vMaxVal2, cur2);
-           	vMaxVal3 = _mm_max_ps(vMaxVal3, cur3);
-           	vMaxVal4 = _mm_max_ps(vMaxVal4, cur4);
+			vMaxVal1 = _mm_max_ps(vMaxVal1, (__m128)maxBin1); 
+			vMaxVal2 = _mm_max_ps(vMaxVal2, (__m128)maxBin2); 
+			vMaxVal3 = _mm_max_ps(vMaxVal3, (__m128)maxBin3); 
+			vMaxVal4 = _mm_max_ps(vMaxVal4, (__m128)maxBin4); 
+
 
             __m128i vMaxIndex1 =  _mm_and_si128((__m128i)vMaxVal1, mask);
             __m128i vMaxIndex2 =  _mm_and_si128((__m128i)vMaxVal2, mask);
@@ -360,10 +392,10 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
             vMaxIndex4 = _mm_packus_epi32(vMaxIndex4, vMaxIndex4);        // Pack down to 16 bits
             vMaxIndex4 = _mm_packus_epi16(vMaxIndex4, vMaxIndex4);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
 
-            _mm_storeu_ps(&prob[i], vMaxVal1);
-            _mm_storeu_ps(&prob[i+4], vMaxVal2);
-            _mm_storeu_ps(&prob[i+8], vMaxVal3);
-            _mm_storeu_ps(&prob[i+12], vMaxVal4);
+            _mm_store_ps(&prob[i], vMaxVal1);
+            _mm_store_ps(&prob[i+4], vMaxVal2);
+            _mm_store_ps(&prob[i+8], vMaxVal3);
+            _mm_store_ps(&prob[i+12], vMaxVal4);
 
         	_mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex1));
         	_mm_stream_si32((int*)&classImg[i+4], _mm_cvtsi128_si32(vMaxIndex2)); 	
@@ -374,30 +406,52 @@ void findClassProb(size_t start , size_t end, int width, int height, int numClas
        
         output_layer += (width * height);
     }
-    /*
 	//Method 2 - double as much as normal
 	
 	__m128i mask = _mm_set1_epi32(1023);//0X000003FF (10 digits for index)
     for(int c = 0; c < numClasses; c++)
-    {              
+    {      
+    	__m128i index = _mm_set1_epi32(c+1);
+              
         for(int i = start; i < end; i+=4)
         {      	
-        	__m128 vMaxVal = _mm_loadu_ps(&prob[i]);
-        	__m128 cur = _mm_loadu_ps(&output_layer[i]); 
+        	__m128 vMaxVal = _mm_load_ps(&prob[i]);
+        	__m128 cur = _mm_load_ps(&output_layer[i]); 
 
-           	vMaxVal = _mm_max_ps(vMaxVal, cur);
+			__m128i maxBin = _mm_and_si128((__m128i)(cur), maskIns);
+			maxBin = _mm_or_si128(maxBin, index);
+
+			vMaxVal = _mm_max_ps(vMaxVal, (__m128)maxBin); 
+
             __m128i vMaxIndex =  _mm_and_si128((__m128i)vMaxVal, mask);
             vMaxIndex = _mm_packus_epi32(vMaxIndex, vMaxIndex);        // Pack down to 16 bits
             vMaxIndex = _mm_packus_epi16(vMaxIndex, vMaxIndex);        // Pack down to 8 bits (one packing doesn't work for numbers>127)
-            _mm_storeu_ps(&prob[i], vMaxVal);
+            _mm_store_ps(&prob[i], vMaxVal);
         	_mm_stream_si32((int*)&classImg[i], _mm_cvtsi128_si32(vMaxIndex)); 	
           	
           }
        
         output_layer += (width * height);
     }
-   	
-	//Original Method 
+
+	/*
+   	// C code -corresponding to method 1
+	for(int i = start; i < end; i++)
+    {
+    	float *output_layer_test = output_layer;
+    	for(int c = 0; c < numClasses; c++)
+    	{
+    		if((output_layer_test[i] >= threshold) && (output_layer_test[i] > prob[i]))
+            {
+                prob[i] = output_layer_test[i];
+                classImg[i] = c + 1;
+            }
+            output_layer_test += (height*width);
+        }
+    }
+
+    
+	//Original Method - corresponding to method 2
 	
    	for(int c = 0; c < numClasses; c++)
     {
@@ -443,7 +497,7 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
 
     int64_t freq = clockFrequency(), t0, t1;
     //int numthreads = std::thread::hardware_concurrency();
-    int numthreads = 1;
+    int numthreads = 2;
     //std::cout << "numthreads = " << numthreads << std::endl;
     size_t start = 0, end = 0, chunk = 0;
 
@@ -452,8 +506,8 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
     memset(prob, 0, (width * height * sizeof(float)));
     memset(classImg, 0, (width * height));
 
-    /*
-    for (int i = 0; i < numClasses; i++)
+    t0 = clockCounter();
+    /*for (int i = 0; i < numClasses; i++)
     {
     	for (int j = 0; j < height; j++)
     	{
@@ -480,8 +534,53 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
     		}
     	}
     }
-   	*/
+	*/
     float* output_layer_test = output_layer;
+
+    const __m128i maskIndex = _mm_set1_epi32(0XFFFFFC00);
+
+    for (int i = 0; i < numClasses; i++)
+    {
+    	__m128i maxIndexBin = _mm_set1_epi32(i+1);
+    	for (int j = 0; j < height*width; j+=4)
+    	{
+    		__m128 floatBin = _mm_loadu_ps(&output_layer_test[j]);
+    	
+            __m128i maxBin = _mm_and_si128((__m128i)(floatBin), maskIndex);
+            maxBin = _mm_or_si128(maxBin, maxIndexBin);
+
+            _mm_storeu_ps(&output_layer_test[j], (__m128)(maxBin));
+        
+    	}
+    	output_layer_test += (width * height);
+    }
+    
+    t1 = clockCounter();
+    //printf("Time to insert index -- %.3f msec\n", (float)(t1-t0)*1000.0f/(float)freq);
+	
+	
+    /* 
+    const __m128i maskIndex = _mm_set1_epi32(0XFFFFFC00);
+    for (int j = 0; j < height*width; j+=4)
+    {  	
+    	float* output_layer_test = output_layer;
+		for (int i = 0; i < numClasses; i++)
+		{
+			__m128i maxIndexBin = _mm_set1_epi32(i+1);
+			__m128 floatBin = _mm_loadu_ps(&output_layer_test[j]);
+		
+	        __m128i maxBin = _mm_and_si128((__m128i)(floatBin), maskIndex);
+	        maxBin = _mm_or_si128(maxBin, maxIndexBin);
+
+	        _mm_storeu_ps(&output_layer_test[j], (__m128)(maxBin));
+	    	output_layer_test += (width * height);
+		}
+    	
+    }
+	
+   	
+	
+   
 
     for (int i = 0; i < numClasses; i++)
     {
@@ -510,8 +609,8 @@ void getMaskImage(int input_dims[4], float* prob, unsigned char* classImg, float
     	}
     	output_layer_test += (width * height);
     }
-
-
+    */
+    
 
 
     t1 = clockCounter();
