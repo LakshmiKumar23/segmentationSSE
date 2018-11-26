@@ -37,7 +37,7 @@ include_directories (/opt/rocm/include)
 link_directories    (/opt/rocm/lib)
 list(APPEND SOURCES annmodule.cpp)
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2 -msse2 -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2 -std=c++11")
 target_link_libraries(${PROJECT_NAME} openvx vx_nn pthread)
 
 add_executable(MIVisionSeg anntest.cpp)
