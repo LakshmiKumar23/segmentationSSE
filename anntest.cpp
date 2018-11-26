@@ -36,7 +36,6 @@ THE SOFTWARE.
 #include <unistd.h>
 #include <math.h>
 #include <bitset>
-#include <emmintrin.h>
 
 #if ENABLE_OPENCV
 #include <opencv2/opencv.hpp>
